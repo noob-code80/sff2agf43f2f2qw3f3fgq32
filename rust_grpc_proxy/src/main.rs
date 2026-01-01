@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tokio::net::TcpListener;
-use tokio::io::{AsyncWriteExt, AsyncReadExt};
-use tracing::{info, error, warn};
+use tokio::io::AsyncWriteExt;
+use tracing::{info, error};
 use futures::StreamExt;
 use anyhow::Context;
 use bincode;
@@ -90,8 +90,6 @@ async fn main() -> anyhow::Result<()> {
             }
         }
     }
-
-    Ok(())
 }
 
 // Обработка TCP клиента - максимальная скорость через бинарный протокол
@@ -101,7 +99,7 @@ async fn handle_tcp_client(
 ) -> anyhow::Result<()> {
     use tokio_stream::wrappers::BroadcastStream;
     
-    let mut rx = state.tx_sender.subscribe();
+    let rx = state.tx_sender.subscribe();
     let mut broadcast_stream = BroadcastStream::new(rx);
     
     // Отправляем Create транзакции через TCP с бинарной сериализацией (bincode)

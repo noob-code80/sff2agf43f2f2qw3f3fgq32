@@ -2,8 +2,9 @@
 
 use yellowstone_grpc_client::{GeyserGrpcClient, ClientTlsConfig};
 use yellowstone_grpc_proto::prelude::*;
+use yellowstone_grpc_proto::prelude::subscribe_update::UpdateOneof;
 use bs58;
-use tracing::{info, error};
+use tracing::{info, error, warn};
 use std::time::Duration;
 use futures::{SinkExt, StreamExt};
 use std::collections::HashMap;
@@ -123,13 +124,14 @@ fn parse_create_transaction(tx: &SubscribeUpdateTransaction) -> Option<CreateTra
     // Проверяем метаданные транзакции
     let tx_data = tx.transaction.as_ref()?;
     let meta = tx_data.meta.as_ref()?;
+    
+    // Получаем slot из верхнего уровня SubscribeUpdateTransaction
+    let slot = tx.slot.unwrap_or(0);
 
     // Проверяем логи на наличие Pump.fun и Create
     let log_messages = meta.log_messages.as_ref()?;
-    let log_str = match std::str::from_utf8(log_messages) {
-        Ok(s) => s,
-        Err(_) => return None,
-    };
+    // log_messages это Vec<String>, объединяем в одну строку
+    let log_str = log_messages.join("\n");
 
     let has_pump_fun = log_str.contains(pump_fun_program_id);
     let is_create = log_str.contains("Instruction: Create") && !log_str.contains("CreateV2");
@@ -172,14 +174,15 @@ fn parse_create_transaction(tx: &SubscribeUpdateTransaction) -> Option<CreateTra
     let pre_balances = &meta.pre_token_balances;
 
     let pre_mints: std::collections::HashSet<String> = pre_balances.iter()
-        .map(|b| b.mint.clone())
+        .filter_map(|b| b.mint.clone())
         .collect();
 
     let mut candidate_mints = vec![];
     for balance in post_balances {
-        let mint = &balance.mint;
-        if !pre_mints.contains(mint) && !mint.contains("11111111111111111111111111111111") {
-            candidate_mints.push(mint.clone());
+        if let Some(mint) = &balance.mint {
+            if !pre_mints.contains(mint) && !mint.contains("11111111111111111111111111111111") {
+                candidate_mints.push(mint.clone());
+            }
         }
     }
 
@@ -192,7 +195,7 @@ fn parse_create_transaction(tx: &SubscribeUpdateTransaction) -> Option<CreateTra
         signature,
         mint_address,
         creator_address,
-        slot: tx_data.slot,
+        slot,
         is_create_v2,
     })
 }

@@ -120,26 +120,25 @@ async fn subscribe_once(endpoint: &str, token: &str, state: Arc<AppState>) -> an
 
 fn parse_create_transaction(tx: &SubscribeUpdateTransaction) -> Option<CreateTransaction> {
     let pump_fun_program_id = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P";
-
+    
     // Проверяем метаданные транзакции
     let tx_data = tx.transaction.as_ref()?;
     let meta = tx_data.meta.as_ref()?;
     
-    // Получаем slot из верхнего уровня SubscribeUpdateTransaction
-    // slot может быть i64 или u64, конвертируем в u64
-    let slot = tx.slot as u64;
-
     // Проверяем логи на наличие Pump.fun и Create
-    let log_messages = meta.log_messages.as_ref()?;
-    let log_str = match std::str::from_utf8(log_messages) {
-        Ok(s) => s,
-        Err(_) => return None,
+    let log_messages = meta.log_messages.as_ref();
+    let log_str = match log_messages {
+        Some(bytes) => match std::str::from_utf8(bytes) {
+            Ok(s) => s,
+            Err(_) => return None,
+        },
+        None => return None,
     };
-
+    
     let has_pump_fun = log_str.contains(pump_fun_program_id);
     let is_create = log_str.contains("Instruction: Create") && !log_str.contains("CreateV2");
     let is_create_v2 = log_str.contains("Instruction: CreateV2");
-
+    
     if !has_pump_fun || (!is_create && !is_create_v2) {
         return None;
     }
@@ -175,24 +174,27 @@ fn parse_create_transaction(tx: &SubscribeUpdateTransaction) -> Option<CreateTra
     // Получаем mint из post_token_balances
     let post_balances = &meta.post_token_balances;
     let pre_balances = &meta.pre_token_balances;
-
+    
     let pre_mints: std::collections::HashSet<String> = pre_balances.iter()
-        .filter_map(|b| b.mint.clone())
+        .filter_map(|b| b.mint.as_ref().cloned())
         .collect();
 
     let mut candidate_mints = vec![];
     for balance in post_balances {
-        if let Some(mint) = &balance.mint {
+        if let Some(mint) = balance.mint.as_ref() {
             if !pre_mints.contains(mint) && !mint.contains("11111111111111111111111111111111") {
                 candidate_mints.push(mint.clone());
             }
         }
     }
-
+    
     let mint_address = candidate_mints.iter()
-        .find(|m: &&String| m.ends_with("pump"))
+        .find(|m| m.ends_with("pump"))
         .or_else(|| candidate_mints.first())
         .cloned()?;
+
+    // Получаем slot из верхнего уровня SubscribeUpdateTransaction
+    let slot = tx.slot.unwrap_or(0) as u64;
 
     Some(CreateTransaction {
         signature,

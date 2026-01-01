@@ -1,0 +1,99 @@
+name: Build Rust GRPC Proxy Windows EXE
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: x86_64-pc-windows-gnu
+    
+    - name: Cache Cargo registry
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          rust_grpc_proxy/target/
+        key: ${{ runner.os }}-grpc-proxy-cargo-${{ hashFiles('rust_grpc_proxy/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-grpc-proxy-cargo-
+    
+    - name: Cache Cargo build
+      uses: actions/cache@v4
+      with:
+        path: rust_grpc_proxy/target/
+        key: ${{ runner.os }}-grpc-proxy-build-${{ hashFiles('rust_grpc_proxy/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-grpc-proxy-build-
+    
+    - name: Install Chocolatey (if needed)
+      shell: pwsh
+      run: |
+        if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
+          Set-ExecutionPolicy Bypass -Scope Process -Force
+          [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+          iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+        }
+    
+    - name: Install dependencies
+      shell: pwsh
+      run: |
+        choco install protoc msys2 -y
+        $protocPath = "C:\ProgramData\chocolatey\lib\protoc\tools\bin\protoc.exe"
+        $msys2Path = "C:\tools\msys64"
+        
+        if (Test-Path $protocPath) {
+          echo "PROTOC=$protocPath" >> $env:GITHUB_ENV
+          echo "✅ protoc installed"
+        }
+        
+        if (Test-Path $msys2Path) {
+          # Устанавливаем autoconf и automake через pacman
+          $env:CHERE_INVOKING = "1"
+          $env:MSYSTEM = "MINGW64"
+          & "$msys2Path\usr\bin\bash.exe" -lc "pacman -S --noconfirm autoconf automake make"
+          
+          # Добавляем MSYS2 в PATH
+          echo "$msys2Path\mingw64\bin" >> $env:GITHUB_PATH
+          echo "$msys2Path\usr\bin" >> $env:GITHUB_PATH
+          echo "✅ MSYS2 installed"
+        }
+    
+    - name: Build
+      shell: pwsh
+      working-directory: rust_grpc_proxy
+      run: |
+        $env:RUST_BACKTRACE = "1"
+        $env:PROTOC = "C:\ProgramData\chocolatey\lib\protoc\tools\bin\protoc.exe"
+        # Используем MSYS2 MinGW для всей сборки
+        $env:CC = "gcc"
+        $env:CXX = "g++"
+        $env:MAKE = "make"
+        $env:PATH = "C:\tools\msys64\mingw64\bin;C:\tools\msys64\usr\bin;$env:PATH"
+        # Используем MinGW target вместо MSVC
+        cargo build --release --target x86_64-pc-windows-gnu
+      env:
+        PROTOC: C:\ProgramData\chocolatey\lib\protoc\tools\bin\protoc.exe
+        CC: gcc
+        CXX: g++
+        MAKE: make
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: rust-grpc-proxy-windows
+        path: rust_grpc_proxy/target/x86_64-pc-windows-gnu/release/rust-grpc-proxy.exe
+        retention-days: 7
+

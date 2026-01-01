@@ -27,7 +27,7 @@ jobs:
           ~/.cargo/registry/index/
           ~/.cargo/registry/cache/
           ~/.cargo/git/db/
-          rust_grpc_proxy/target/
+          C:\t
         key: ${{ runner.os }}-grpc-proxy-cargo-${{ hashFiles('rust_grpc_proxy/Cargo.lock') }}
         restore-keys: |
           ${{ runner.os }}-grpc-proxy-cargo-
@@ -35,7 +35,7 @@ jobs:
     - name: Cache Cargo build
       uses: actions/cache@v4
       with:
-        path: rust_grpc_proxy/target/
+        path: C:\t
         key: ${{ runner.os }}-grpc-proxy-build-${{ hashFiles('rust_grpc_proxy/Cargo.lock') }}
         restore-keys: |
           ${{ runner.os }}-grpc-proxy-build-
@@ -79,6 +79,8 @@ jobs:
       run: |
         $env:RUST_BACKTRACE = "1"
         $env:PROTOC = "C:\ProgramData\chocolatey\lib\protoc\tools\bin\protoc.exe"
+        # Используем короткий путь для target чтобы избежать проблем с длинными путями в aws-lc-sys
+        $env:CARGO_TARGET_DIR = "C:\t"
         # Используем MSYS2 MinGW для всей сборки
         $env:CC = "gcc"
         $env:CXX = "g++"
@@ -91,11 +93,12 @@ jobs:
         CC: gcc
         CXX: g++
         MAKE: make
+        CARGO_TARGET_DIR: C:\t
     
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: rust-grpc-proxy-windows
-        path: rust_grpc_proxy/target/x86_64-pc-windows-gnu/release/rust-grpc-proxy.exe
+        path: C:\t\x86_64-pc-windows-gnu\release\rust-grpc-proxy.exe
         retention-days: 7
 

@@ -125,10 +125,11 @@ fn parse_create_transaction(tx: &SubscribeUpdateTransaction) -> Option<CreateTra
     let tx_data = tx.transaction.as_ref()?;
     let meta = tx_data.meta.as_ref()?;
     
-    // Получаем slot из верхнего уровня SubscribeUpdateTransaction (может быть Option<i64>)
-    let slot = tx.slot.map(|s| s as u64).unwrap_or(0);
+    // Получаем slot из верхнего уровня SubscribeUpdateTransaction
+    // slot может быть i64 или u64, конвертируем в u64
+    let slot = tx.slot as u64;
 
-    // Проверяем логи на наличие Pump.fun и Create (log_messages это Option<Vec<u8>>)
+    // Проверяем логи на наличие Pump.fun и Create
     let log_messages = meta.log_messages.as_ref()?;
     let log_str = match std::str::from_utf8(log_messages) {
         Ok(s) => s,
@@ -176,12 +177,12 @@ fn parse_create_transaction(tx: &SubscribeUpdateTransaction) -> Option<CreateTra
     let pre_balances = &meta.pre_token_balances;
 
     let pre_mints: std::collections::HashSet<String> = pre_balances.iter()
-        .filter_map(|b| b.mint.as_ref().cloned())
+        .filter_map(|b| b.mint.clone())
         .collect();
 
     let mut candidate_mints = vec![];
     for balance in post_balances {
-        if let Some(mint) = balance.mint.as_ref() {
+        if let Some(mint) = &balance.mint {
             if !pre_mints.contains(mint) && !mint.contains("11111111111111111111111111111111") {
                 candidate_mints.push(mint.clone());
             }

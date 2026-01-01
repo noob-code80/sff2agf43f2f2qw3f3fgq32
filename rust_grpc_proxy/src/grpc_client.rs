@@ -15,7 +15,7 @@ use crate::CreateTransaction;
 use std::sync::Arc;
 
 pub async fn run_grpc_subscription(state: Arc<AppState>) -> anyhow::Result<()> {
-    let endpoint = "https://fr.grpc.gadflynode.com:25565";
+    let endpoint = "http://fr.grpc.gadflynode.com:25565";
     let token = ""; // Gadflynode public endpoint doesn't require token
 
     let mut backoff_interval = Duration::from_secs(1);
@@ -35,15 +35,29 @@ pub async fn run_grpc_subscription(state: Arc<AppState>) -> anyhow::Result<()> {
     }
 }
 
-async fn subscribe_once(endpoint: &str, token: &str, state: Arc<AppState>) -> anyhow::Result<()> {
+async fn subscribe_once(endpoint: &str, _token: &str, state: Arc<AppState>) -> anyhow::Result<()> {
     info!("Connecting to GRPC endpoint: {}", endpoint);
 
-    // Создаем клиент
-    let mut client = GeyserGrpcClient::build_from_shared(endpoint.to_string())?
-        .x_token(if token.is_empty() { None } else { Some(token.to_string()) })?
-        .tls_config(ClientTlsConfig::new().with_native_roots())?
+    // Создаем клиент (CryptoProvider уже установлен в main)
+    let mut client = GeyserGrpcClient::build_from_shared(endpoint.to_string())
+        .map_err(|e| {
+            error!("Failed to create GRPC client builder: {}", e);
+            e
+        })?
+        .tls_config(ClientTlsConfig::new().with_native_roots())
+        .map_err(|e| {
+            error!("Failed to configure TLS: {}", e);
+            e
+        })?
         .connect()
-        .await?;
+        .await
+        .map_err(|e| {
+            error!("Failed to connect to GRPC endpoint: {}", e);
+            if let Some(source) = Error::source(&e) {
+                error!("Source error: {}", source);
+            }
+            e
+        })?;
 
     info!("✅ GRPC channel connected successfully");
 
@@ -105,7 +119,9 @@ async fn subscribe_once(endpoint: &str, token: &str, state: Arc<AppState>) -> an
                 if let Some(source) = Error::source(&e) {
                     error!("Source error: {}", source);
                 }
-                return Err(e.into());
+                // Не прерываем сразу, даем возможность переподключиться
+                warn!("GRPC stream error, will reconnect...");
+                break;
             }
             None => {
                 error!("GRPC stream closed unexpectedly (server closed connection)");
